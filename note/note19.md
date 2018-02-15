@@ -1,7 +1,7 @@
 ![](https://i.imgur.com/obzyV18.jpg)
 ## Callabl、Future、Executors与分支/合并框架
 
-## 19.1 CaLlable和Future接口
+## 19.1 Callable和Future接口
 
 创建线程要么是实现Runnable接口，要么实现Thread类继承。虽然这么做很简单，但创建出的线程会受到严重的限制--run方法不返回任何值给创建者。因此，许多程序员采用将返回值写到文件中这样的不完美解决方案。Runnable的另一个问题在于不能抛出任何异常，因此必须在run方法中处理所有的异常。幸运的是，J2SE5提供了Callable和Future接口，用于解决此类的需求，Thread模拟了一类 **没有返回结果的任务的执行，** 而Callable则是模拟 ** 具有返回结果的任务的执行。** Future更进一步，模拟一类 **可检查进度并可以取回结果的任务的执行**
 
@@ -169,3 +169,192 @@ Totaling for client 109 completed
 The annual turnover (bags) : 60152
 
 ```
+
+### 19.1.5 FutureTask类
+FutureTask类同时实现类Runnable接口和Future接口。因此，FutureTask类技能拥有Runnable接口提供的异步计算能力，也能拥有Future接口提供的返回值给调用方的Future对象取消任务的能力。FutureTask类可以用于封装Callable和Runnable接口。
+
+```java
+//Future<Integer> future = executor.submit(Callable);
+FutureTask<Integer> future = new FutureTaks<Integer>(Callable);
+future.run()
+```
+run方法会调用任务，并将任务的计算结果赋值给Future对象。
+
+也可以将FutureTask实例交给Executor对象用于执行。
+```java
+executor.submit(future);
+```
+由于FutureTask类也实现了Future接口，因此FutureTak接口实例可以用来取消任务，检查任务等。
+
+#### 19.1.6 创建可取消的任务。
+取消任务可以使用执行器返回的Future对象，而创建和执行任务可以使用前面讨论的FutureTask类。
+
+开发可以处理上百万次请求的模拟器。会发送数千条数据交易请求给模拟器。**模拟器包含的线程池用于处理这些请求。**
+还将编写一个“邪恶”的线程，**它会随机选择诺干订单，并且尝试取消他们。如果订单已经执行，取消请求会失败。**
+如果在订单在被分配给线程执行之前接收到取消请求，那么订单会被取消。**如果交易订单正在执行。并且线程可被中断，**
+那么在订单处理过程中接收的取消请求会结束剩余的处理流程。从而取消订单。
+
+```java
+
+/**
+ * Created by guo on 2018/2/15.
+ * 演示可取消任务的股票交易处理程序
+ */
+public class StocksOrderProcessor {
+    static final int MAX_NUMBER_OF_ORDER = 1_000_000;       //交易订单
+    //1、创建数量为1000的线程池来执行订单。经过测试1000个线程，CPU维持在70%-80%左右。
+    static private ExecutorService executor = Executors.newFixedThreadPool(1000);
+    //2、创建ArrayList来保存执行执行订单的引用
+    static private List<Future> ordersToProcess = new ArrayList<>();
+
+    /**
+     * 创建内部私有类OrderExecutor以处理订单执行的业务逻辑。
+     * OrderExecutor实现了Callable接口以支持异步调用。
+     */
+    public static class OrderExecutor implements Callable {
+        int id = 0;
+        int count = 0;
+         //3、传入整型变量id来记录订单编号。
+        public OrderExecutor(int id) {
+            this.id = id;
+        }
+
+        @Override
+        public Object call() throws Exception {
+            try {
+                //4、将技术设为1000，每次计数前，让线程休眠一段不同的时间
+                while (count < 1000) {
+                    count++;
+                    //5、通过让线程休眠一段不同的时间，模拟现实中每个订单需要不同的处理时间。
+                    Thread.sleep(new Random(
+                            System.currentTimeMillis() % 10).nextInt(10));
+                }
+                System.out.println("Successfully executed order:" + id);
+            } catch (Exception ex) {
+                throw (ex);
+            }
+            return id;
+        }
+    }
+}
+```
+## 主函数
+
+```java
+public static void main(String[] args) {
+
+    System.out.printf("Submitting %d trades%n", MAX_NUMBER_OF_ORDER);
+    //6、通过循环遍历，提交一百万订单。
+    for (int i = 0; i < MAX_NUMBER_OF_ORDER; i++) {
+        submitOrder(i);
+    }
+    //7、创建“邪恶”线程尝试随机的取消某些订单。
+    //每当执行到这里时，就会创建一些取消请求，并针对待处理的订单列表中存储的Future对象执行。
+    new Thread(new EvilThread(ordersToProcess)).start();
+
+
+    System.out.println("Cancelling a few order at random");
+    try {
+
+        //8a、某些订单可能已经被处理，模拟器就会继续处理剩余订单。
+        // b、如果订单在执行器分配线程之前被取消，就将永远不会执行。
+        // c、为了留有足够的时间结束所有待处理的订单，让执行器等待30秒。
+        executor.awaitTermination(30, TimeUnit.SECONDS);
+    } catch (InterruptedException e) {
+        e.printStackTrace();
+    }
+
+
+    System.out.println("Checking status before shutdown");
+    int count = 0;
+    //9a、通过循环遍历，统计有多少订单被成功取消。
+    // b、对于订单中每一个Future对象，调用isCancelld方法。
+    // c、如果对应的被成功取消，则方法返回true
+    for (Future f : ordersToProcess) {
+        if (f.isCancelled()) {
+            count++;
+        }
+    }
+    System.out.printf("%d trades cancelled%n", count);
+    //10、立即停止执行器释放分配的所有资源 （貌似我的百万订单根本停不下来啊，求解！）
+    executor.shutdownNow();
+
+}
+
+private static void submitOrder(int id) {
+    //6、a 创建一个Callable实例，每个实例都有为一个的Id供跟踪
+    Callable<Integer> callable = new OrderExecutor(id);
+    //6、b 调用ExecutorService的submit方法可将创建的任务提交以待执行。
+    //并且将submit方法返回的对象放到待处理订单的数组里列表中。
+    ordersToProcess.add(executor.submit(callable));
+}
+```
+## 邪恶线程
+----
+```java
+/**
+ * 邪恶线程，随机的取消某些订单。
+ */
+class EvilThread implements Runnable {
+    private List<Future> ordersToProcess;
+     //1、在构造函数中传入待处理的订单列表，这样可以对某一些Future对象发送取消请求。
+    public EvilThread(List<Future> future) {
+        this.ordersToProcess = future;
+    }
+
+    @Override
+    public void run() {
+         //2、创建100个取消请求
+        Random myNextKill = new Random(System.currentTimeMillis() % 100);
+        for (int i = 0; i < 100; i++) {
+            //3、随机选择Future对象进行取消。
+            int index = myNextKill.nextInt(StocksOrderProcessor.MAX_NUMBER_OF_ORDER);
+            //4、调用Future对象的cancel方法以发送请求，并将cancel方法的参数设为ture。表示任务可能会在执行过程中被中断。
+            boolean cancel = ordersToProcess.get(index).cancel(true);
+            //5、判断是否取消成功，
+            if (cancel) {
+                System.out.println("Cancel Order Succeded:" + index);
+            } else {
+                System.out.println("cancel Order Failed:" + index);
+            }
+            try {
+                //6、在每两个请求之间让“邪恶”线程睡一会。
+                Thread.sleep(myNextKill.nextInt(100));
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+}
+
+```
+程序运行后部分输出如下:
+
+```
+Submitting 1000000 trades
+
+Successfully executed order:28
+Successfully executed order:380
+Successfully executed order:288
+Successfully executed order:120
+Cancelling a few order at random
+Successfully executed order:116
+Successfully executed order:1004
+Successfully executed order:1005
+
+Cancel Order Succeded:698021
+cancel Order Failed:98832(重点)
+...
+Successfully executed order:12268
+Successfully executed order:12420
+Successfully executed order:13190
+Successfully executed order:12199
+
+Checking status before shutdown
+99 trades cancelled(重点)
+Successfully executed order:14045      //估计Kill线程太多了,遗漏这个了.求解.
+```
+从输出可以看到:
+- 订单698021被成功取消,这个订单还未执行,
+- 订单98832的取消请求失败了,因为这个订单已经执行结束.
+- 在发送的100个请请求中,有99个被成功取下.也可能是100%,取决你的电脑配置.
