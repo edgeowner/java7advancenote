@@ -358,3 +358,159 @@ Successfully executed order:14045      //估计Kill线程太多了,遗漏这个�
 - 订单698021被成功取消,这个订单还未执行,
 - 订单98832的取消请求失败了,因为这个订单已经执行结束.
 - 在发送的100个请请求中,有99个被成功取下.也可能是100%,取决你的电脑配置.
+
+### Executors类
+Executors类允许参加线程池并返回`ExecutorService`对象，执行器提供了将任务提交与对任务进行解耦的标准方法，除了对基本的线程生命周期提供支持外，窒息功能其还提供统计收集，应用管理及监控方面的功能。这一切都基于 **生产者-消费者模式。** 使用这种设计模式可以对大型并发应用程序很好的进行扩展。
+
+使用这种服务对象，可以运行`Runnable和Callable`类的实力，你只需要做的是提交任务给服务对象就可以。`ExecutorService`会从线程池中选择线程，并将Runnable对象提交给线程任务。当任务结束时，线程并不会销毁 ，而是返回到线程池中继续执行后续的其他任务，这样可以 **避免创建和销毁线程带来的额外开销**
+
+
+#### Executors类有许多静态方法可用来创建线程池：
+
+1、`newFixedTHreadPool`方法能够创建固定大小的线程池。线程池中的线程将被用来处理任务请求，如果线程处于空闲状态，线程不会销毁，而是会被存放线程池中一段不确定的是将
+
+2、`newCachedThreadPool`，使用该方法创建的线程池中的线程会在空闲60秒之后自动销毁,
+
+3、`newSingleThreadExecutor`该方法仅创建一个线程，当任务结束后不会销毁而是用于处理其他任务。对于多个任务同时请求，则使用队列来维护所有待处理的请求。随后会顺序执行。
+
+4、`newScheduledThreadPool`可以把它看作是java.util.Timer的替代品，该方法创建固定大小的线程池用来调度执行任务，并返回一个`ScheduledExecutorService`对象,该对象提供了若干个方法用于执行任务的调度执行。
+
+#### 创建线程池以进行任务调度
+
+有时创建可在一定时间延迟后执行的线程，可以设置一个报警器在一段时间过后报警。在某些情况下，你也希望以 **一定的频率或固定时间间隔反复执行线程。**
+比如病毒扫描，你可以使用`newScheduledThreadPool`类实现的执行器服务，每24小时运行一次病毒扫描。如果有多个磁盘或大容量的磁盘需要扫描，将扫描的任务分解为多个单元。让每个单元扫描某个特定的磁盘。
+
+另一凸显此服务很实用的应用场景是新闻聚合器。聚合器从多个新闻源收集最新新闻，并将它们排列在客户端以供阅读，多个数据源获取可以并发执行，而这根据目标数据源的网络状况，花费的时间会不一样。客户端和数据源的同步会周期性地执行。如果这样的同步操作频率很高，新的同步操作和当前正在执行的操作就有可能出现重叠。在这种情况下，最好给每次任务的执行设固定的时间间隔，`ScheduledExecutosService`可以帮你实现这样的需求。
+
+### ScheduledExecutorService类
+
+1、`ScheduledExecutorService` 类提供了名为schedule的方法用于设定任务的未来执行。schedule方法有两个重载版本：
+```java
+//Creates and executes a ScheduledFuture that becomes enabled after the given delay.
+<V> ScheduledFuture<V> 	schedule(Callable<V> callable, long delay, TimeUnit unit)
+//Creates and executes a one-shot action that becomes enabled after the given delay.
+ScheduledFuture<?> 	schedule(Runnable command, long delay, TimeUnit unit)
+```
+schedule方法接收三个参数：Callable和Runnable接口、延迟时间以及时间单位。该方法安排由 `Callable和Runnable`指定的任务在给定的延迟时间后执行。时间单位 由该方法的第三个参数指定。方法会返回一个**Future对象**给调用方。
+
+2、除了这个简单的延迟执行之外，ScheduledExecutorService类还提供了scheduleAtFixedRate方法，该任务可以指定任务按照一定的频率执行。
+```java
+//Creates and executes a periodic action that becomes enabled first after the given initial delay, and subsequently with the given period;
+//that is executions will commence after initialDelay then initialDelay+period, then initialDelay + 2 * period, and so on.
+ScheduledFuture<?> 	scheduleAtFixedRate(Runnable command, long initialDelay, long period, TimeUnit unit)
+```
+第一次执行发生在给定的延迟之后，后续执行发生在“延迟+固定时间”，“延迟+2*固定周期”，依次类推，这种方法可以用于**病毒扫描**
+
+3、`scheduleWithFiedDelay`方法在给定延迟之后第一次执行任务。之后按照固定好的时间间隔执行，时间间隔递归你以为本次任务运行到下一次任务的开始。这类调度可以用于新闻聚合应用。
+```jaav
+//Creates and executes a periodic action that becomes enabled first after the given initial delay, and subsequently with the given delay between the termination of one execution and the commencement of the next.
+ScheduledFuture<?> 	scheduleWithFixedDelay(Runnable command, long initialDelay, long delay, TimeUnit unit)
+```
+
+### 任务的调度执行(重点在匿名线程)
+```java
+/**
+ * Created by guo on 2018/2/16.
+ * 演示任务调度执行
+ * 需求：
+ * 如何让任务以一定的频率执行。
+ * 1、该应用是以固定频率执行的病毒扫描程序。
+ * 2、当扫描开始时，程序弹出窗口以显示扫描进度，当磁盘上所有文件被扫描之后，任务会停止。
+ * 3、每次扫描都需要不同的时间，通过让线程随机睡眠一段时间来模拟这个过程。
+ * 4、扫描结束之后，状态窗口会被关闭，知道下次扫描才会弹出，
+ */
+public class VirusScanner {
+    private static JFrame appFrame;
+    private static JLabel statusString;
+    private int scanNumber = 0;
+    //1、调用Executors类的newScheduledThreadPool方法来创建线程池。
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
+    private static final GregorianCalendar calendar = new GregorianCalendar();
+    private static VirusScanner app = new VirusScanner();
+
+    /**
+     * scanDisk方法执行实际的扫描工作
+     */
+    public void scanDisk() {
+        //2、使用线程池中的线程来解决多重并发扫描。
+        final Runnable scanner = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    //将状态窗口显示给用户
+                    appFrame.setVisible(true);
+                    scanNumber++;
+                    Calendar cal = Calendar.getInstance();
+                    //显示扫描数以及扫描开始时间，接下来，让当前线程随机睡一段时间。
+                    DateFormat df = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.MEDIUM);
+                    statusString.setText(" Scan" + scanNumber + " started at" + df.format(cal.getTime()));
+                    //常数1000是用来确保窗口至少显示1秒。在实际程序中，病毒扫描代码会放在sleep语句所在的位置。
+                    //让线程休眠是假装病毒扫描持续一段时间，
+                    //当线程从休眠中唤醒时，我们隐藏了窗口，这让用户感觉当前一轮已经结束。
+                    //题外话1：请卸载国产360，QQ管家，小白可以无视。需要的组件可以下载绿色版。（明明是一个开源软件，你却说那高危险。明明是https://www.github.com开头。）
+                    //题外话2：感谢 架构@奇虎360，@江湖人称小白哥。谢谢你的心意，能力没到那，你还不能成为我职业生涯的第一位贵人。骚年，加油吧，越努力，越幸运。
+                    Thread.sleep(1000 + new Random().nextInt(10000));
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+        //重点：3、使用之前创建的调度器来让扫描程序以固定频率执行。
+        //         a、扫描任务在最初的一秒延迟之后会以每隔15秒的频率运行
+        //         b、调用器会返回一个Future对象，用于之后取消扫描任务。
+        //         c、为了能够进行取消操作，创建另一个匿名线程。
+        //         d、以下代码所有时间单位为秒，目前只是模拟的效果。
+        //         e、在实际应用中，病毒扫描应当每天或每几小时执行一次
+        final ScheduledFuture<?> scanManager = scheduler.scheduleAtFixedRate(scanner, 1, 15, TimeUnit.SECONDS);
+        /**
+         * 匿名线程
+         * 这个线程只在60秒延迟之后运行一次，模拟会以一分钟的总时间周期执行
+         * 每隔15秒，病毒扫描状态窗口会弹出，并且显示请留1秒，或更长时间。
+         */
+        scheduler.schedule(new Runnable() {
+            @Override
+            public void run() {
+                //4、取消病毒扫描任务，并关闭调度器和状态窗口
+                scanManager.cancel(true);
+                scheduler.shutdown();
+                appFrame.dispose();
+
+            }
+        }, 60, TimeUnit.SECONDS);
+    }
+
+
+}
+
+```
+### 主函数(不是重点)
+```java
+/**
+ * 不是重点的main方法：
+ * 创建状态窗口、设置并调用scanDisk方法。
+ * 注意：主线程会在之后立刻结束，而在scanDisk方法中创建的线程会在接下来一分钟内继续运行。
+ */
+public static void main(String[] args) {
+    appFrame = new JFrame();
+    Dimension dimension = Toolkit.getDefaultToolkit().getScreenSize();
+    appFrame.setSize(400, 70);
+    appFrame.setLocation(dimension.width / 2 - appFrame.getWidth() / 2,
+            dimension.height / 2 - appFrame.getHeight() / 2);
+    statusString = new JLabel();
+    appFrame.add(statusString);
+    appFrame.setVisible(false);
+    app.scanDisk();
+
+}
+```
+
+### 获取首个已结束的运行结果
+
+之前已经学了如何将任务提交给执行器立即执行、延迟以及周期性的运行 ([计算年销售额](https://segmentfault.com/a/1190000013292805)) 还了解到执行器可以提供并维护多个线程并发的执行任务  ([模拟可取消任务的股票交易处理程序](https://segmentfault.com/a/1190000013294416)) 。在某些情况下，当提交多个任务给执行器，你可能希望处理任意以结束任务的结果，而不像等到每个任务都执行结束。目前只用过执行器的get方法会等待任务结束。当任务提交时，可以创建循环来获取每个计算结果，代码如下：
+```java
+for(Future<T> result : results) {
+  result.get();
+}
+```
+
+这样就可以顺序的获取结果，但如果某个特定的任务需要长时间才能结束，那么当前的get调用会一直**阻塞**.在这种情况下，即使其他任务已经提前完成，也无法获取结果，为了解决这个问题，可以使用`ExecutorCompletionService`类，该类会检测提交给执行器的任务，通过take方法，可以一个个地获取到任务执行的结果。
