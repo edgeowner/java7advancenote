@@ -1,0 +1,25 @@
+## 线程安全集合
+如果多个线程访问集合，那么除非开发人员提供自己的同步机制，否则就有可能出现数据损坏，J2SE 5.0引入了新的集合类对现有类进行了封装，从而提供并行机制。
+Java初始版本提供的Vector和Hashtable类是线程安全的  ，但在J2SE1.2中，这些类库被声明为过时，他们分别被ArrayList和HashMap所取代，然而这两个类闭关不是线程安全的。为了引入线程安全机制，Java提供了同步封装器，从而可以使用以下声明创建线程安全的List和Map：
+```java
+List<E> synArrayList = Collections.synchronizedList(new ArrayList<E>());
+Map<K,V> synHashMap = Collections.synchronizedMap(new HashMap<K,V>());
+```
+尽管在当时解决了并发问题，但现在推介使用新引入的集合类，随着J2SE 5.0中并发实用类的引入，Java提供了Map、有序集合和队列集合的并发实现版本，`ConcurrentHashMap`和`ConcurrentSkipListMap`这两个类提供了Map实现。`ConcurrentSkipListSet`实现了Set接口，而`ConcurrentLinkedQueue`实现类Queue接口，这些类采用一些复杂算法以最小化竞争提供数据访问的并发性。
+
+由于这些类库支持并发，因此他们返回弱一致的迭代器，这有可能无法完全反映底层数据结构的所有变化，不过，他们与jaba.util包里的集合一样，保证不会两次返回同一个值。也不会抛出`ConcurrentModificationException`异常,为了支持Map中插入和删除操作，新类通过了putIfAbsent和remove方法。putIfAbsent方法保证仅有一个线程将条目放入缓冲区。remove方法则原子性的移除键与值，最后replace方法原子替换与指定键对应的值。
+
+Java SE 7 针对java.util.concurrent包的主要变动之一就是引入`ConcurrentLinkedQueue`类，该类是基于链表的无大小限制的双端队列。当多个线程需要共享集合，并且保证多个线程对于集合的插入、移除、以及访问操作安全执行，可以使用该类。
+
+集合可以应用到许多实际场景中，例如：在股票交易服务中，交易信息会保存在某种类型的集合中；在线聊天应用中，不同的通信可能会被维护在某种类型的集合中，数据记录程序可能会从多个并发渠道收集信息。并把数据放到某种集合中。在所有的这些实际应用中，使用这些线程安全的集合可以帮助你减少许多管理共享对象并发的难题。
+
+总而言之，如果需要可并发的集合，最好使用java.util.concurrent包中新引入的类，如果程序不需要支持并发，可以继续使用`java.util`中的类
+
+## ThreadLocalRandon类
+ThreadLocalRandom类定义了独立于当前线程的随机数生成器。当程序中有多个任务需要在并行的线程池中使用随机数时，可以使用该类。我们不再像以前那样使用共享的Random类，而是使用ThreadLoacalRandom类，这会带来并发程序中更少的额外开销与竞争。
+一般情况下，可以使用ThreadLocalRandom.current.nextLong(n)生成随机数，其中n作为生成数字的上限，0为下限。如果并发程序中的线程需要使用随机数，可以考虑使用这个类。
+
+## 小节
+Runnable接口允许参加可以提交到线程中的异步执行的任务，当这样的异步执行运行结束时，既不会隐式通知创建者，也不返回任何结果。J2SE中引入的Callable和Future概念帮助解决了这个问题，可以通过实现Callable接口来创建调用者，Callable接口只有call方法。call方法同Runnable接口中的run方法一样异步执行。想要执行异步方法call的调用，必须创建Callable对象，并将提交 给执行器来执行，执行器会返回Future对象给调用者，用于监测、控制、与获取执行的结果。这类执行有可能在提交之后立即执行，也有可能延迟一段时间后执行。任务也可以按照固定的频率或时间段来重复执行。
+
+Executors类提供了这些功能。使用ExecutorService类来管理提交的异步任务的生命周期，以及追踪他们的执行进度，ScheduldExecutorService类可以帮助在一定延迟后调度命令或周期性的进行执行。还介绍了如何使用新增加的Fork/Join框架来完成算法中更细粒度的并行化。结尾介绍了J2SE新引入的线程安全集合。这些线程安全集合的方法大多与之前的方法相对应。
